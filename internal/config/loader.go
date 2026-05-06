@@ -1,82 +1,72 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 )
 
-// EnvConfig holds environment variables for a named context
-type EnvConfig struct {
-	Name    string            `json:"name"`
-	Context string            `json:"context"`
-	Vars    map[string]string `json:"vars"`
+// Config is the top-level structure for an envchain config file.
+type Config struct {
+	Version  string             `yaml:"version"`
+	Contexts map[string]CtxDef `yaml:"contexts"`
 }
 
-// ChainConfig represents the top-level envchain config file
-type ChainConfig struct {
-	Version  string      `json:"version"`
-	Contexts []EnvConfig `json:"contexts"`
+// CtxDef defines a single context entry in the config file.
+type CtxDef struct {
+	Extends string            `yaml:"extends,omitempty"`
+	Vars    map[string]string `yaml:"vars"`
 }
 
-const defaultConfigFile = ".envchain.json"
-
-// Load reads and parses the envchain config file from the given path.
-// If path is empty, it looks for .envchain.json in the current directory.
-func Load(path string) (*ChainConfig, error) {
-	if path == "" {
-		path = defaultConfigFile
-	}
-
-	abs, err := filepath.Abs(path)
+// Load reads and parses an envchain YAML config file from the given path.
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("resolving config path: %w", err)
+		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
-	data, err := os.ReadFile(abs)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("config file not found: %s", abs)
-		}
-		return nil, fmt.Errorf("reading config file: %w", err)
-	}
-
-	var cfg ChainConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config file: %w", err)
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
 	if err := validate(&cfg); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
+		return nil, err
 	}
-
 	return &cfg, nil
 }
 
-// GetContext returns the EnvConfig for the given context name.
-func (c *ChainConfig) GetContext(name string) (*EnvConfig, error) {
-	for i := range c.Contexts {
-		if c.Contexts[i].Context == name {
-			return &c.Contexts[i], nil
+// ToResolverInputs extracts the defs and extends maps needed by context.NewResolver.
+func (c *Config) ToResolverInputs() (defs map[string]map[string]string, extends map[string]string) {
+	defs = make(map[string]map[string]string, len(c.Contexts))
+	extends = make(map[string]string, len(c.Contexts))
+	for name, ctx := range c.Contexts {
+		defs[name] = ctx.Vars
+		if ctx.Extends != "" {
+			extends[name] = ctx.Extends
 		}
 	}
-	return nil, fmt.Errorf("context %q not found in config", name)
+	return
 }
 
-func validate(cfg *ChainConfig) error {
+func validate(cfg *Config) error {
 	if cfg.Version == "" {
-		return fmt.Errorf("missing required field: version")
+		return fmt.Errorf("config missing required field: version")
 	}
-	seen := make(map[string]bool)
-	for _, ctx := range cfg.Contexts {
-		if ctx.Context == "" {
-			return fmt.Errorf("context entry missing required field: context")
+	names := make(map[string]bool, len(cfg.Contexts))
+	for name := range cfg.Contexts {
+		if names[name] {
+			return fmt.Errorf("duplicate context name: %q", name)
 		}
-		if seen[ctx.Context] {
-			return fmt.Errorf("duplicate context name: %s", ctx.Context)
+		names[name] = true
+	}
+	for name, ctx := range cfg.Contexts {
+		if ctx.Extends != "" {
+			if _, ok := cfg.Contexts[ctx.Extends]; !ok {
+				return fmt.Errorf("context %q extends unknown context %q", name, ctx.Extends)
+			}
 		}
-		seen[ctx.Context] = true
 	}
 	return nil
 }
