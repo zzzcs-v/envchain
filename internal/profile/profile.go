@@ -83,3 +83,15 @@ func (s *Store) List() ([]string, error) {
 	}
 	return names, nil
 }
+
+// Exists reports whether a profile with the given name exists on disk.
+func (s *Store) Exists(name string) (bool, error) {
+	_, err := os.Stat(s.path(name))
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	return false, err
+}
