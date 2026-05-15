@@ -45,12 +45,12 @@ func runWatch(cmd *cobra.Command, args []string) error {
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sig)
 
 	for {
 		select {
 		case ev := <-w.Events:
-			fmt.Fprintf(cmd.OutOrStdout(), "changed  %s\n  old: %s\n  new: %s\n  at:  %s\n",
-				ev.Path, ev.OldHash, ev.NewHash, ev.At.Format(time.RFC3339))
+			printEvent(cmd, ev)
 		case watchErr := <-w.Errors:
 			fmt.Fprintf(cmd.ErrOrStderr(), "watch error: %v\n", watchErr)
 		case <-sig:
@@ -58,4 +58,11 @@ func runWatch(cmd *cobra.Command, args []string) error {
 			return nil
 		}
 	}
+}
+
+// printEvent writes a formatted change notification for a single file event
+// to the command's output stream.
+func printEvent(cmd *cobra.Command, ev watch.Event) {
+	fmt.Fprintf(cmd.OutOrStdout(), "changed  %s\n  old: %s\n  new: %s\n  at:  %s\n",
+		ev.Path, ev.OldHash, ev.NewHash, ev.At.Format(time.RFC3339))
 }
