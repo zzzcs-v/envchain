@@ -17,6 +17,9 @@ type Result struct {
 // OK returns true when there are no errors.
 func (r Result) OK() bool { return len(r.Errors) == 0 }
 
+// HasWarnings returns true when there is at least one warning.
+func (r Result) HasWarnings() bool { return len(r.Warnings) > 0 }
+
 // Summary returns a human-readable summary string.
 func (r Result) Summary() string {
 	var b strings.Builder
@@ -44,4 +47,13 @@ func Vars(vars map[string]string) Result {
 		}
 	}
 	return res
+}
+
+// Key validates a single environment variable key and returns an error if it
+// does not conform to the expected naming convention.
+func Key(k string) error {
+	if !envKeyRegex.MatchString(k) {
+		return fmt.Errorf("key %q does not match expected pattern [A-Z_][A-Z0-9_]*", k)
+	}
+	return nil
 }
